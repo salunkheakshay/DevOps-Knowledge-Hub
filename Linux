@@ -1,1 +1,107 @@
+##The Multi-AZ Fleet & Stateful Storage
+
+Description
+Scenario:
+
+You are migrating a legacy monolithic application to AWS. The architecture board demands that the new deployment eliminates single points of failure by spanning across multiple physical data centers (Availability Zones).
+
+Furthermore, the application writes critical transaction logs locally. Since EC2 instances are ephemeral and can be terminated at any time, you must decouple the storage from the compute.
+
+Your Mission:
+
+Deploy a highly available fleet of two web servers spread across two distinct Availability Zones in the Oregon (us-west-2) region. You must attach a secondary, stateful EBS volume to each instance. To prove the infrastructure is fully automated, you must use a bootstrap script (User Data) to automatically format the new volume, mount it to /data, persist the mount across reboots, and serve a web page.
+
+Requirements:
+
+1. Security Configuration:
+
+Create a Security Group named ha-fleet-sg that allows inbound HTTP (80) and SSH (22) from Anywhere (0.0.0.0/0).
+2. Multi-AZ Compute Provisioning:
+
+Launch Server A in the us-west-2a Availability Zone. Name it exactly server-az-a.
+Launch Server B in the us-west-2b Availability Zone. Name it exactly server-az-b.
+Both servers must use Amazon Linux 2023 and the t3.micro instance type.
+3. Stateful Storage Integration:
+
+During the launch configuration, leave the default Root Volume at 8 GiB.
+Add a New Volume (EBS gp2, 8 GiB) to both instances.
+4. Automated Bootstrapping:
+
+Write a User Data shell script that executes on boot for both servers. You can research around on how to achieve this.
+
+The script must:
+
+Install, start, and enable the Apache web server (httpd).
+
+Identify the attached secondary EBS volume (on t3.micro instances, this is /dev/nvme1n1).
+
+Format the volume using the xfs filesystem.
+
+Create a directory at /data and mount the volume to it.
+
+Add an entry to /etc/fstab with the nofail parameter to ensure the mount survives reboots.
+
+Write an HTML file to /var/www/html/index.html indicating the server name and confirming the storage is mounted.
+
+Outcome
+Mastered Multi-AZ Deployments to survive localized physical data center failures.
+
+Implemented Compute and Storage Decoupling by attaching and configuring secondary EBS volumes.
+
+Automated Linux OS-level disk management (mkfs, mount, fstab) via EC2 User Data.
+
+
+
+Answer--
+
+#!/bin/bash
+
+# Update system
+dnf update -y
+
+# Install Apache
+dnf install -y httpd
+
+# Start and enable Apache
+systemctl enable httpd
+systemctl start httpd
+
+# Secondary EBS volume
+DEVICE="/dev/nvme1n1"
+
+# Wait until volume is attached
+while [ ! -b $DEVICE ]; do
+    sleep 5
+done
+
+# Format only if filesystem does not exist
+if ! blkid $DEVICE; then
+    mkfs.xfs $DEVICE
+fi
+
+# Create mount point
+mkdir -p /data
+
+# Get UUID
+UUID=$(blkid -s UUID -o value $DEVICE)
+
+# Add to fstab if not already present
+grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /data xfs defaults,nofail 0 2" >> /etc/fstab
+
+# Mount filesystem
+mount -a
+
+# Create web page
+cat > /var/www/html/index.html <<EOF
+<html>
+<head><title>HA Fleet Server A</title></head>
+<body>
+<h1>server-az-a</h1>
+<p>Apache is running successfully.</p>
+<p>Secondary EBS volume mounted on /data.</p>
+</body>
+</html>
+EOF
+
+systemctl restart httpd
 
